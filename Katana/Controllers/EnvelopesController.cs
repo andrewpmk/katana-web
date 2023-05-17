@@ -36,13 +36,13 @@ namespace Katana.Controllers
                     vm.Add(new EnvelopeIndexViewModel
                     {
                         Envelope = envelope,
-                        AmountInEnvelope = _store.GetAvailable(),
+                        AmountInEnvelope = await _store.GetAvailable(),
                         IsAvailableEnvelope = true
                     });
                 }
                 else
                 {
-                    decimal spendingTotal = _store.GetSpendingTotal(envelope);
+                    decimal spendingTotal = await _store.GetSpendingTotal(envelope);
 
                     vm.Add(new EnvelopeIndexViewModel
                     {
@@ -60,14 +60,14 @@ namespace Katana.Controllers
         // GET: Envelopes/Details/5
         public async Task<IActionResult> Details(int? id)
         {
-            if (id == null || _context.Envelopes == null)
+            if (id == null)
                 return NotFound();
 
-            var envelope = _store.GetEnvelope((int)id);
+            var envelope = await _store.GetEnvelope((int)id);
             if (envelope == null)
                 return NotFound();
                         
-            List<Account> boundAccounts = _store.GetBoundAccounts(envelope);
+            List<Account> boundAccounts = await _store.GetBoundAccounts(envelope);
 
             List<Transaction> allTransactions =
                 _context.Transactions
@@ -140,23 +140,18 @@ namespace Katana.Controllers
                 vm.InflowEntries = inflowEntries;
                 vm.IsAvailableEnvelope = true;
                 vm.AvailableFunds = vm.TotalInflow + vm.NetStashed;
-
-                //if (vm.AvailableFunds < 0)
-                //{
-                //    vm.IsUnfundedSpending = true;
-                //}
             }
 
             return View(vm);
         }
 
         // GET: Envelopes/Stash
-        public IActionResult Stash()
+        public async Task<IActionResult> Stash()
         {
-            var envelopes = _context.Envelopes
+            var envelopes = await _context.Envelopes
                                     .Where(env => env.Id != SpecialEnvelope.Available)
                                     .OrderBy(env => env.Name)
-                                    .ToList();
+                                    .ToListAsync();
 
             var allTransactions = _context.Transactions
                                           .Include(t => t.Entries)
@@ -166,17 +161,10 @@ namespace Katana.Controllers
 
             foreach (var envelope in envelopes)
             {
-                decimal spendingTotal =
-                    allTransactions
-                            .SelectMany(t => t.Entries)
-                            .Where(entry => entry.Account.BoundTo == envelope)
-                            .Where(entry => entry.Amount > 0)
-                            .Sum(entry => entry.Amount);
-
                 decimal netStashes =
-                    _context.Stashes
+                    await _context.Stashes
                             .Where(stash => stash.To == envelope || stash.From == envelope)
-                            .Sum(stash => (stash.To == envelope ? 1 : -1) * stash.Amount);
+                            .SumAsync(stash => (stash.To == envelope ? 1 : -1) * stash.Amount);
 
                 var row = new StashRow
                 {
@@ -196,11 +184,11 @@ namespace Katana.Controllers
 
             // total up the inflow
             decimal inflow =
-                allTransactions
+                await allTransactions
                     .SelectMany(t => t.Entries)
                     .Where(e => e.Account.Name.StartsWith("assets"))
                     .Where(e => e.Amount > 0)
-                    .Sum(e => e.Amount);
+                    .SumAsync(e => e.Amount);
 
             var vm = new StashViewModel
             {
@@ -213,7 +201,7 @@ namespace Katana.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public IActionResult ProcessStash(StashViewModel vm)
+        public async Task<IActionResult> ProcessStash(StashViewModel vm)
         {
             var envelopes = _context.Envelopes.ToDictionary(e => e.Id);
 
@@ -222,7 +210,7 @@ namespace Katana.Controllers
                 DateTime now = DateTime.Now;
                 foreach (var envelope in vm.Rows.Where(r => r.Stashing != 0))
                 {
-                    _store.Stash(new Stash
+                    await _store.Stash(new Stash
                     {
                         From = envelopes[1],
                         To = envelopes[envelope.Envelope.Id],
@@ -231,7 +219,7 @@ namespace Katana.Controllers
                     });
                 }
 
-                _context.SaveChanges();
+                await _context.SaveChangesAsync();
             }
 
             return RedirectToAction("Details", "Envelopes", new { id = 1 });
@@ -252,8 +240,8 @@ namespace Katana.Controllers
         {
             if (ModelState.IsValid)
             {
-                _context.Add(envelope);
-                _context.SaveChanges();
+                await _context.AddAsync(envelope);
+                await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
             }
             return View(envelope);
@@ -265,7 +253,7 @@ namespace Katana.Controllers
             if (id == null || _context.Envelopes == null)
                 return NotFound();
 
-            var envelope = _store.GetEnvelope((int)id);
+            var envelope = await _store.GetEnvelope((int)id);
             if (envelope == null)
                 return NotFound();
 
@@ -286,7 +274,7 @@ namespace Katana.Controllers
             {
                 try
                 {
-                    var there = _store.GetEnvelope((int)id);
+                    var there = await _store.GetEnvelope(id);
                     there.Name = envelope.Name;
                     there.HexColor = envelope.HexColor;
                                         
@@ -294,10 +282,9 @@ namespace Katana.Controllers
                 }
                 catch (DbUpdateConcurrencyException)
                 {
-                    if (!EnvelopeExists(envelope.Id))
+                    if (!await EnvelopeExists(envelope.Id))
                         return NotFound();
-                    else
-                        throw;
+                    throw;
                 }
                 return RedirectToAction(nameof(Index));
             }
@@ -310,7 +297,7 @@ namespace Katana.Controllers
             if (id == null || _context.Envelopes == null)
                 return NotFound();
 
-            var envelope = _store.GetEnvelope((int)id);
+            var envelope = await _store.GetEnvelope((int)id);
             if (envelope == null)
                 return NotFound();
             
@@ -325,17 +312,17 @@ namespace Katana.Controllers
             if (_context.Envelopes == null)
                 return Problem("Entity set 'KatanaContext.Envelope' is null.");
 
-            var envelope = _store.GetEnvelope((int)id);
+            var envelope = await _store.GetEnvelope(id);
             if (envelope != null)
                 _context.Envelopes.Remove(envelope);
             
-            _context.SaveChanges();
+            await _context.SaveChangesAsync();
             return RedirectToAction(nameof(Index));
         }
 
-        private bool EnvelopeExists(int id)
+        private async Task<bool> EnvelopeExists(int id)
         {
-          return (_context.Envelopes?.Any(e => e.Id == id)).GetValueOrDefault();
+            return await _context.Envelopes?.AnyAsync(e => e.Id == id);
         }
     }
 }

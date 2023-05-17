@@ -5,12 +5,12 @@ namespace Katana.Models
 {
     public class SeedData
     {
-        public static void Initialize(IServiceProvider serviceProvider)
+        public static async Task Initialize(IServiceProvider serviceProvider)
         {
             using var context = new KatanaContext(serviceProvider.GetRequiredService<DbContextOptions<KatanaContext>>());
 
             // Bail if we have existing data
-            if (context.Envelopes.Any() || context.Accounts.Any())
+            if (await context.Envelopes.AnyAsync() || await context.Accounts.AnyAsync())
                 return;
 
             // Built-in envelopes
@@ -22,7 +22,7 @@ namespace Katana.Models
             //context.Accounts.Add(Account.New("assets:savings"));
             //context.Accounts.Add(Account.New("credit:visa"));
 
-            context.SaveChanges();
+            await context.SaveChangesAsync();
         }
     }
 }

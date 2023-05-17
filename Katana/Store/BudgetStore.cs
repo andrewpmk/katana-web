@@ -8,30 +8,30 @@ namespace Katana.Store
     {
         /* Accounts */
 
-        Account? GetAccount(int id);
-        List<Account> GetBoundAccounts(Envelope envelope);
+        Task<Account?> GetAccount(int id);
+        Task<List<Account>> GetBoundAccounts(Envelope envelope);
 
 
         /* Transactions */
 
-        public Transaction? GetTransaction(int id);
+        Task<Transaction?> GetTransaction(int id);
 
         // Get all transactions that have at least one entry involving this account
-        List<Transaction> GetTransactionsWithAccount(Account account);
+        Task<List<Transaction>> GetTransactionsWithAccount(Account account);
 
 
         /* Envelopes */
 
-        Envelope? GetEnvelope(int id);
+        Task<Envelope?> GetEnvelope(int id);
 
-        void Stash(Stash stash);
+        Task Stash(Stash stash);
 
 
         /* Reports */
 
-        Dictionary<Account, decimal> GetAccountBalances();
-        decimal GetAvailable();
-        decimal GetSpendingTotal(Envelope envelope);
+        Task<Dictionary<Account, decimal>> GetAccountBalances();
+        Task<decimal> GetAvailable();
+        Task<decimal> GetSpendingTotal(Envelope envelope);
     }
 
 
@@ -43,12 +43,12 @@ namespace Katana.Store
 
         #region Accounts
 
-        public Account? GetAccount(int id)
+        public async Task<Account?> GetAccount(int id)
         {
-            return _context
+            return await _context
                 .Accounts
                 .Include(a => a.BoundTo)
-                .FirstOrDefault(a => a.Id == id);
+                .FirstOrDefaultAsync(a => a.Id == id);
         }
 
         /// <summary>
@@ -56,11 +56,11 @@ namespace Katana.Store
         /// </summary>
         /// <param name="envelope"></param>
         /// <returns></returns>
-        public List<Account> GetBoundAccounts(Envelope envelope)
+        public async Task<List<Account>> GetBoundAccounts(Envelope envelope)
         {
-            return _context.Accounts
+            return await _context.Accounts
                            .Where(a => a.BoundTo == envelope)
-                           .ToList();
+                           .ToListAsync();
         }
 
         #endregion
@@ -70,46 +70,46 @@ namespace Katana.Store
         /// Get an individual transaction, including its entries and bound accounts
         /// </summary>
         /// <param name="id">The Transaction.Id for the transaction</param>
-        public Transaction? GetTransaction(int id)
+        public async Task<Transaction?> GetTransaction(int id)
         {
-            return _context.Transactions
+            return await _context.Transactions
                            .Include(t => t.Entries)
                            .ThenInclude(e => e.Account)
                            .Where(t => t.Id == id)
-                           .FirstOrDefault();
+                           .FirstOrDefaultAsync();
         }
 
         /// <summary>
         /// Get a list of transactions with at least one entry from this account
         /// </summary>
-        public List<Transaction> GetTransactionsWithAccount(Account account)
+        public async Task<List<Transaction>> GetTransactionsWithAccount(Account account)
         {
-            return _context.Transactions
+            return await _context.Transactions
                            .Include(trans => trans.Entries)
                            .ThenInclude(entry => entry.Account)
                            .Where(t => t.Entries.Any(e => e.Account == account))
                            .OrderBy(t => t.Date)
-                           .ToList();
+                           .ToListAsync();
         }
 
         #endregion
         #region Envelopes
 
-        public Envelope? GetEnvelope(int id) => _context.Envelopes.FirstOrDefault(e => e.Id == id);
+        public async Task<Envelope?> GetEnvelope(int id) => await _context.Envelopes.FirstOrDefaultAsync(e => e.Id == id);
 
         #endregion
         #region Reports
 
-        public Dictionary<Account, decimal> GetAccountBalances()
+        public async Task<Dictionary<Account, decimal>> GetAccountBalances()
         {
-            var accountBalances = _context.Transactions
+            var accountBalances = await _context.Transactions
                 .SelectMany(t => t.Entries)
                 .GroupBy(entry => entry.Account.Id)
-                .ToDictionary(group => group.Key,
+                .ToDictionaryAsync(group => group.Key,
                               group => group.Sum(entry => entry.Amount));
 
-            var accounts = _context.Accounts
-                .ToDictionary(account => account.Id);
+            var accounts = await _context.Accounts
+                .ToDictionaryAsync(account => account.Id);
 
             return accountBalances
                 .ToDictionary(kvp => accounts[kvp.Key],
@@ -119,12 +119,12 @@ namespace Katana.Store
         /// <summary>
         /// Move an amount from one Envelope to another, updating the .Amount field for each accordingly
         /// </summary>
-        public void Stash(Stash stash)
+        public async Task Stash(Stash stash)
         {
-            _context.Stashes.Add(stash);
+            await _context.Stashes.AddAsync(stash);
 
-            var from = _context.Envelopes.Find(stash.From.Id);
-            var to   = _context.Envelopes.Find(stash.To.Id);
+            var from = await _context.Envelopes.FindAsync(stash.From.Id);
+            var to   = await _context.Envelopes.FindAsync(stash.To.Id);
 
             // TODO: can we do this??
             from.Amount -= stash.Amount;
@@ -136,10 +136,10 @@ namespace Katana.Store
         /// to accounts starting with "assets" plus the net amount stashed into the Available envelope
         /// </summary>
         /// <returns></returns>
-        public decimal GetAvailable()
+        public async Task<decimal> GetAvailable()
         {
             // total up the inflow for the Available envelope
-            decimal inflow = _context
+            decimal inflow = await _context
                 .Transactions
                 .Include(t => t.Entries)
                 .ThenInclude(e => e.Account)
@@ -153,15 +153,13 @@ namespace Katana.Store
                              * && e.Entry.Account.BoundTo == null */)
 
                 .Where(e => e.Amount > 0)
-                .Sum(e => e.Amount);
+                .SumAsync(e => e.Amount);
 
             decimal netStashed =
-                _context.Stashes
-                        //.Include(s => s.From)
-                        //.Include(s => s.To)
+                await _context.Stashes
                         .Where(stash => stash.To.Id   == SpecialEnvelope.Available
                                      || stash.From.Id == SpecialEnvelope.Available)
-                        .Sum(stash => (stash.To.Id == SpecialEnvelope.Available ? 1 : -1) * stash.Amount);
+                        .SumAsync(stash => (stash.To.Id == SpecialEnvelope.Available ? 1 : -1) * stash.Amount);
 
             return inflow + netStashed;
         }
@@ -170,15 +168,15 @@ namespace Katana.Store
         /// <summary>
         /// Return the sum of positive amounts of all entries bound to this account
         /// </summary>
-        public decimal GetSpendingTotal(Envelope envelope)
+        public async Task<decimal> GetSpendingTotal(Envelope envelope)
         {
-            return _context.Transactions
+            return await _context.Transactions
                            .Include(t => t.Entries)
                            .ThenInclude(e => e.Account)
                            .SelectMany(t => t.Entries)
                            .Where(entry => entry.Account.BoundTo == envelope)
                            .Where(entry => entry.Amount > 0)
-                           .Sum(entry => entry.Amount);
+                           .SumAsync(entry => entry.Amount);
         }
 
         #endregion

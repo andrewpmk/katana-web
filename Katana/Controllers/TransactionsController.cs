@@ -20,14 +20,14 @@ namespace Katana.Controllers
         }
 
         // GET: Transactions
-        public IActionResult Index()
+        public async Task<IActionResult> Index()
         {
-            return View(_context.Transactions
+            return View(await _context.Transactions
                                 .Include(t => t.Entries)
                                 .OrderByDescending(t => t.Date)
                                 .ThenByDescending(t => t.Id)
                                 .Take(100) // TODO: 100 limit
-                                .ToList());
+                                .ToListAsync());
         }
 
         // GET: Transactions/Details/5
@@ -36,7 +36,7 @@ namespace Katana.Controllers
             if (id == null || _context.Transactions == null)
                 return NotFound();
             
-            var transaction = _store.GetTransaction((int)id);
+            var transaction = await _store.GetTransaction((int)id);
             if (transaction == null)
                 return NotFound();
 
@@ -71,7 +71,7 @@ namespace Katana.Controllers
             if (id == null || _context.Transactions == null)
                 return NotFound();
 
-            var transaction = _store.GetTransaction((int)id);
+            var transaction = await _store.GetTransaction((int)id);
             if (transaction == null)
                 return NotFound();
 
@@ -99,14 +99,12 @@ namespace Katana.Controllers
                 }
                 catch (DbUpdateConcurrencyException)
                 {
-                    if (!TransactionExists(transaction.Id))
+                    if (!await TransactionExists(transaction.Id))
                     {
                         return NotFound();
                     }
-                    else
-                    {
-                        throw;
-                    }
+
+                    throw;
                 }
                 return RedirectToAction(nameof(Index));
             }
@@ -150,9 +148,9 @@ namespace Katana.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        private bool TransactionExists(int id)
+        private async Task<bool> TransactionExists(int id)
         {
-          return (_context.Transactions?.Any(e => e.Id == id)).GetValueOrDefault();
+            return await _context.Transactions?.AnyAsync(e => e.Id == id);
         }
 
         // GET: Transactions/Import
@@ -163,7 +161,7 @@ namespace Katana.Controllers
         }
 
         [HttpPost]
-        public IActionResult ProcessImport(TransactionImportViewModel vm)
+        public async Task<IActionResult> ProcessImport(TransactionImportViewModel vm)
         {
             var journal = Ledger.ParseJournal(vm.LedgerText.Trim());
 
@@ -171,7 +169,7 @@ namespace Katana.Controllers
                    .ForEach(Ledger.Balance); // balance them or die trying
 
             // pull all the accounts over right away. add to them as needed
-            List<Account> accounts = _context.Accounts.ToList();
+            List<Account> accounts = await _context.Accounts.ToListAsync();
                         
             foreach (var lt in journal.LedgerTransactions)
             {
@@ -203,7 +201,8 @@ namespace Katana.Controllers
                 }
                 _context.Transactions.Add(transaction);
             }
-            _context.SaveChanges();
+
+            await _context.SaveChangesAsync();
             return RedirectToAction("Index");
         }
     }

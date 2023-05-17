@@ -59,18 +59,6 @@ namespace Katana.Tests
         }
 
         [Fact]
-        public void ParseMyEntireRealJournal()
-        {
-            const string file = "C:\\Users\\Jason\\Dropbox\\budget\\.hledger.journal";
-            string journal = File.ReadAllText(file);
-
-            Ledger ledger = Ledger.ParseJournal(journal);
-
-            Assert.NotNull(ledger);
-            Assert.Equal(3826, ledger.LedgerTransactions.Count);
-        }
-
-        [Fact]
         public void TestRemoveComment()
         {
             Assert.Equal("blah", Ledger.RemoveComment("blah ; comment"));
